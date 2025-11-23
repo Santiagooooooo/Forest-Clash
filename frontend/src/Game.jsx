@@ -48,6 +48,18 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
     const [showLogin, setShowLogin] = useState(false);
     const [showHistory, setShowHistory] = useState(false); // ⬅️ NUEVO: Modal de historial
     const [gamesHistory, setGamesHistory] = useState([]); // ⬅️ NUEVO: Historial de partidas
+    const [selectedCardPreview, setSelectedCardPreview] = useState(null);
+
+// Función para mostrar preview
+    const showCardPreview = (card) => {
+        setSelectedCardPreview(card);
+    };
+
+// Función para cerrar preview
+    const closeCardPreview = () => {
+        setSelectedCardPreview(null);
+    };
+
 
     function addHistory(byPlayer, label) {
         const entry = {
@@ -682,6 +694,7 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
                         </Card>
 
                         {/* Mano del Jugador */}
+                        {/* Mano del Jugador */}
                         <Card className="border-primary">
                             <Card.Header className="bg-primary text-white fw-bold">🃏 Tu Mano</Card.Header>
                             <Card.Body>
@@ -699,15 +712,30 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
                                         <div
                                             key={c.instanceId}
                                             onClick={() => !selectingBurnTarget && !selectingLumberTarget && !selectingContractTarget && playCard(c, true)}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                showCardPreview(c);
+                                            }}
                                             style={{
                                                 cursor: (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) ? "not-allowed" : "pointer",
                                                 opacity: (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) ? 0.5 : 1,
-                                                transition: "transform 0.2s"
+                                                transition: "transform 0.2s",
+                                                position: "relative"
                                             }}
                                             onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-10px)"}
                                             onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+                                            title="Click derecho para ver más grande"
                                         >
-                                            <img src={c.img} alt={c.name} style={{ width: "80px", height: "110px", borderRadius: "8px" }} />
+                                            <img
+                                                src={c.img}
+                                                alt={c.name}
+                                                style={{
+                                                    width: "80px",
+                                                    height: "110px",
+                                                    borderRadius: "8px",
+                                                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+                                                }}
+                                            />
                                         </div>
                                     ))}
                                 </div>
@@ -896,6 +924,54 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowHistory(false)}>Cerrar</Button>
+                </Modal.Footer>
+            </Modal>
+            {/* MODAL: Preview de Carta */}
+            <Modal
+                show={selectedCardPreview !== null}
+                onHide={closeCardPreview}
+                centered
+                size="lg"
+            >
+                <Modal.Body className="text-center p-4" style={{ backgroundColor: '#f8f9fa' }}>
+                    {selectedCardPreview && (
+                        <>
+                            <img
+                                src={selectedCardPreview.img}
+                                alt={selectedCardPreview.name}
+                                style={{
+                                    maxWidth: "100%",
+                                    maxHeight: "70vh",
+                                    borderRadius: "12px",
+                                    boxShadow: "0 8px 16px rgba(0,0,0,0.3)"
+                                }}
+                            />
+                            <h3 className="mt-3">{selectedCardPreview.name}</h3>
+                            <p className="text-muted">{selectedCardPreview.description}</p>
+                            <Badge bg="info" className="fs-6">
+                                {selectedCardPreview.type === "tree" && `🌲 Valor: ${selectedCardPreview.value}`}
+                                {selectedCardPreview.type === "fire" && "🔥 Fogata"}
+                                {selectedCardPreview.type === "wildfire" && "💥 Incendio Forestal"}
+                                {selectedCardPreview.type === "lumberjack" && "🪓 Leñador"}
+                                {selectedCardPreview.type === "politician" && "🎩 Político"}
+                                {selectedCardPreview.type === "contract" && "📜 Contrato"}
+                            </Badge>
+                        </>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={closeCardPreview}>Cerrar</Button>
+                    {isPlayerTurn && !selectingBurnTarget && !selectingLumberTarget && !selectingContractTarget && (
+                        <Button
+                            variant="primary"
+                            onClick={() => {
+                                playCard(selectedCardPreview, true);
+                                closeCardPreview();
+                            }}
+                        >
+                            Jugar esta carta
+                        </Button>
+                    )}
                 </Modal.Footer>
             </Modal>
         </>
