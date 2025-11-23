@@ -1,896 +1,903 @@
 // src/Game.jsx
 import React, { useState, useEffect, useCallback } from "react";
-import Card from "./Cards/Card";
+import { Container, Row, Col, Card, Button, Badge, Modal, ProgressBar, Navbar, Alert, Dropdown } from "react-bootstrap";
+import CardComponent from "./Cards/Card";
 import { cards as allCards } from "./Cards/Card";
-//import subwayVideo from "./Videos/subway_1.mp4";
 import backgroundMusic from "./Videos/miAudio.mp3";
+import Login from "./Login"; // ⬅️ NUEVO: Importar componente de login
 
-
-
-/* -------------------------
-   ProgressBar (sin cambios)
-   ------------------------- */
-function ProgressBar({ value, goal = 20 }) {
-  const percent = Math.min(100, (value / goal) * 100);
-  let color = "#4caf50";
-  if (value >= goal * 0.9) color = "#e53935";
-  else if (value >= goal * 0.5) color = "#fbc02d";
-  return (
-    <div style={{ width: "220px", margin: "8px auto" }}>
-      <div
-        style={{
-          height: "12px",
-          background: "#ddd",
-          borderRadius: 8,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${percent}%`,
-            background: color,
-            transition: "width 0.4s ease",
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------
-   Helpers: clonar carta con instanceId
-   ------------------------- */
 function makeInstance(card) {
-  return {
-    ...card,
-    instanceId: `${card.id}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
-  };
-}
-
-export default function Game() {
-  const GOAL = 20; // número de puntos para ganar
-  const [playerTrees, setPlayerTrees] = useState(0);
-  const [botTrees, setBotTrees] = useState(0);
-  const [playerBlocked, setPlayerBlocked] = useState(false);
-  const [botBlocked, setBotBlocked] = useState(false);
-  const [isPlayerTurn, setIsPlayerTurn] = useState(true);
-  const [gameOver, setGameOver] = useState(false);
-
-  const [playerHand, setPlayerHand] = useState([]);
-  const [botHand, setBotHand] = useState([]);
-
-  const [playerBoard, setPlayerBoard] = useState([]);
-  const [botBoard, setBotBoard] = useState([]);
-
-  // Modos de selección
-  const [selectingBurnTarget, setSelectingBurnTarget] = useState(false);
-  const [pendingFireCard, setPendingFireCard] = useState(null);
-
-  const [selectingLumberTarget, setSelectingLumberTarget] = useState(false);
-  const [pendingLumberCard, setPendingLumberCard] = useState(null);
-
-  const [selectingContractTarget, setSelectingContractTarget] = useState(false);
-  const [pendingContractCard, setPendingContractCard] = useState(null);
-
-  // control de robos por turno
-  const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
-  const [playerHasPolitician, setPlayerHasPolitician] = useState(false);
-  const [botHasPolitician, setBotHasPolitician] = useState(false);
-
-  // Historial de jugadas
-  const [history, setHistory] = useState([]);
-
-  const [volume, setVolume] = useState(0.5); // volumen inicial (50%)
-  const [isMuted, setIsMuted] = useState(false);
-  const audioRef = React.useRef(null);
-
-
-
-  // Añade entrada al historial (mantiene solo últimas 20)
-  function addHistory(byPlayer, label) {
-    const entry = {
-      player: byPlayer ? "Tú" : "Bot",
-      move: label ?? "(acción)",
-      time: Date.now(),
+    return {
+        ...card,
+        instanceId: `${card.id}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
     };
-    setHistory((prev) => {
-      const next = [...prev, entry];
-      return next.slice(-20);
-    });
-  }
-
-  // ------------------------------------------------
-  // Inicializar manos (cada carta con instanceId)
-  // ------------------------------------------------
-  useEffect(() => {
-    function drawInitialHand() {
-      const deck = [...allCards];
-      const shuffled = deck.sort(() => Math.random() - 0.5);
-      return shuffled.slice(0, 5).map((c) => makeInstance(c));
-    }
-    setPlayerHand(drawInitialHand());
-    setBotHand(drawInitialHand());
-    setHasDrawnThisTurn(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-
-
-  // ------------------------------------------------
-  // Draw: solo si mano tiene menos de 5 cartas
-  // ------------------------------------------------
-  function drawCardForPlayer() {
-    setPlayerHand((prev) => {
-      if (prev.length >= 5) return prev;
-      const c = makeInstance(allCards[Math.floor(Math.random() * allCards.length)]);
-      return [...prev, c];
-    });
-  }
-  function drawCardForBot() {
-    setBotHand((prev) => {
-      if (prev.length >= 5) return prev;
-      const c = makeInstance(allCards[Math.floor(Math.random() * allCards.length)]);
-      return [...prev, c];
-    });
-  }
-
-  // ------------------------------------------------
-  // finalizeAfterAction: revisar victoria y toggle turno
-  // ------------------------------------------------
-  function finalizeAfterAction(byPlayer, addedValue = 0) {
-    setTimeout(() => {
-      if (byPlayer) {
-        setPlayerTrees((prev) => {
-          const newTotal = prev + addedValue;
-          if (newTotal >= GOAL) {
-            setGameOver(true);
-            setTimeout(() => alert("¡Ganaste!"), 20);
-            return newTotal;
-          }
-          setIsPlayerTurn(false);
-          setHasDrawnThisTurn(false);
-          return newTotal;
-        });
-      } else {
-        setBotTrees((prev) => {
-          const newTotal = prev + addedValue;
-          if (newTotal >= GOAL) {
-            setGameOver(true);
-            setTimeout(() => alert("¡El bot gana!"), 20);
-            return newTotal;
-          }
-          setIsPlayerTurn(true);
-          setHasDrawnThisTurn(false);
-          return newTotal;
-        });
-      }
-    }, 50);
-  }
-
-  // ------------------------------------------------
-  // Funcion que el bot usa para decidir/jugar
-  // ------------------------------------------------
-  const botPlay = useCallback(() => {
-    if (gameOver) return;
-    if (isPlayerTurn) return;
-
-    const hasPolitician = botBoard.some((card) => card.type === "politician" || card.isPolitician);
-    const contractCard = botHand.find((card) => card.type === "contract");
-
-    if (hasPolitician) {
-      if (!contractCard) {
-        setIsPlayerTurn(true);
-        setHasDrawnThisTurn(false);
-        return;
-      } else {
-        const idx = botBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
-        if (idx !== -1) {
-          // consumir contrato
-          setBotHand((prev) => prev.filter((c) => c.instanceId !== contractCard.instanceId));
-          const removed = botBoard[idx];
-          const val = removed.value ?? 0;
-          setBotBoard((prev) => prev.filter((_, i) => i !== idx));
-          setBotTrees((t) => Math.max(0, t - val));
-          setBotHasPolitician(false);
-          addHistory(false, `Contract -> removed Politician`);
-          finalizeAfterAction(false, 0);
-          return;
-        } else {
-          setIsPlayerTurn(true);
-          setHasDrawnThisTurn(false);
-          return;
-        }
-      }
-    }
-
-    const playable = botHand.filter((card) => {
-      if (card.type === "tree") return true;
-      if (card.type === "wildfire") return true;
-      if (card.type === "fire") return playerBoard.length > 0;
-      if (card.type === "lumberjack") return playerBoard.length > 0;
-      if (card.type === "politician") return true;
-      if (card.type === "contract") return true;
-      return false;
-    });
-
-    if (playable.length === 0) {
-      setIsPlayerTurn(true);
-      setHasDrawnThisTurn(false);
-      return;
-    }
-
-    const botCard = playable[Math.floor(Math.random() * playable.length)];
-    playCard(botCard, false);
-  }, [gameOver, isPlayerTurn, botBoard, botHand, playerBoard]);
-
-  // ------------------------------------------------
-  // Turn management
-  // ------------------------------------------------
-  useEffect(() => {
-    if (gameOver) return;
-
-    if (isPlayerTurn) {
-      if (!hasDrawnThisTurn) {
-        drawCardForPlayer();
-        setHasDrawnThisTurn(true);
-      }
-    } else {
-      if (!hasDrawnThisTurn) {
-        drawCardForBot();
-        setHasDrawnThisTurn(true);
-        setTimeout(() => {
-          botPlay();
-        }, 700);
-      }
-    }
-  }, [isPlayerTurn, gameOver, hasDrawnThisTurn, botPlay]);
-
-  // ------------------------------------------------
-  // playCard: remueve por instanceId y maneja modos de seleccion
-  // ------------------------------------------------
-  function playCard(card, byPlayer = true) {
-    if (gameOver) return;
-    if (byPlayer && !isPlayerTurn) return;
-    if (!byPlayer && isPlayerTurn) return;
-
-    const label = card.name ?? card.type;
-
-    // POLITICIAN
-    if (card.type === "politician") {
-      if (byPlayer) {
-        setBotBoard((prev) => [...prev, { ...card, isPolitician: true }]);
-        setBotHasPolitician(true);
-        setPlayerHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
-        addHistory(true, `Político -> placed on Bot`);
-      } else {
-        setPlayerBoard((prev) => [...prev, { ...card, isPolitician: true }]);
-        setPlayerHasPolitician(true);
-        setBotHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
-        addHistory(false, `Político -> placed on Player`);
-      }
-      finalizeAfterAction(byPlayer, 0);
-      return;
-    }
-
-    // si estamos en modo selección y es el jugador, no permitir otra jugada
-    if ((selectingBurnTarget || selectingLumberTarget || selectingContractTarget) && byPlayer) {
-      return;
-    }
-
-    // FIRE (jugador activa selección; bot ejecuta directamente)
-    if (card.type === "fire" && byPlayer) {
-      setSelectingBurnTarget(true);
-      setPendingFireCard(card);
-      // no agregamos al historial hasta confirmar objetivo
-      return;
-    }
-
-    // LUMBER (jugador activa selección; bot ejecuta directamente)
-    if (card.type === "lumberjack" && byPlayer) {
-      setSelectingLumberTarget(true);
-      setPendingLumberCard(card);
-      return;
-    }
-
-    // CONTRACT (player selects target politician)
-    if (card.type === "contract" && byPlayer) {
-      setSelectingContractTarget(true);
-      setPendingContractCard(card);
-      return;
-    }
-
-    // Consumir carta (remover por instanceId)
-    if (byPlayer) {
-      setPlayerHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
-    } else {
-      setBotHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
-    }
-
-    // Ahora aplicar efectos según tipo y añadir historial donde corresponda
-    switch (card.type) {
-      case "tree": {
-        const blocked = byPlayer
-          ? playerBoard.some((c) => c.isPolitician)
-          : botBoard.some((c) => c.isPolitician);
-
-        if (blocked) {
-          alert("No puedes plantar árboles: hay un Politician que lo impide.");
-          return;
-        }
-        addTreeToBoard(card, byPlayer, byPlayer ? setPlayerBoard : setBotBoard);
-        addHistory(byPlayer, `Tree (${card.value ?? 1})`);
-        finalizeAfterAction(byPlayer, card.value ?? 1);
-        return;
-      }
-
-      case "fire": {
-        if (!byPlayer) {
-          // bot jugó fogata -> elegir objetivo en playerBoard si existe
-          if (playerBoard.length > 0) {
-            const idx = Math.floor(Math.random() * playerBoard.length);
-            const burned = playerBoard[idx];
-            const val = burned.value ?? 1;
-            setPlayerBoard((prev) => prev.filter((_, i) => i !== idx));
-            setPlayerTrees((t) => Math.max(0, t - val));
-            addHistory(false, `Fogata -> burned ${burned.name ?? "tree"}`);
-          } else {
-            setPlayerTrees((t) => Math.max(0, t - 1));
-            addHistory(false, `Fogata -> -1 trees`);
-          }
-        }
-        break;
-      }
-
-      case "lumberjack": {
-        if (!byPlayer) {
-          if (playerBoard.length > 0) {
-            const idx = Math.floor(Math.random() * playerBoard.length);
-            const stolen = playerBoard[idx];
-            const val = stolen.value ?? 1;
-            setPlayerBoard((prev) => prev.filter((_, i) => i !== idx));
-            setPlayerTrees((t) => Math.max(0, t - val));
-            setBotBoard((b) => [...b, stolen]);
-            setBotTrees((t) => t + val);
-            addHistory(false, `Leñador -> stole ${stolen.name ?? "tree"}`);
-          } else {
-            const treeTemplate = allCards.find((x) => x.type === "tree");
-            setBotBoard((b) => [...b, makeInstance(treeTemplate)]);
-            setBotTrees((t) => t + 1);
-            addHistory(false, `Leñador -> +1 tree`);
-          }
-        }
-        break;
-      }
-
-      case "contract": {
-        if (!byPlayer) {
-          const idxSelf = botBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
-          if (idxSelf !== -1) {
-            const removed = botBoard[idxSelf];
-            const val = removed.value ?? 0;
-            setBotBoard((prev) => prev.filter((_, i) => i !== idxSelf));
-            setBotTrees((t) => Math.max(0, t - val));
-            setBotHasPolitician(false);
-            addHistory(false, `Contract -> removed own Politician`);
-          } else {
-            const idxOpp = playerBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
-            if (idxOpp !== -1) {
-              const removed = playerBoard[idxOpp];
-              const val = removed.value ?? 0;
-              setPlayerBoard((prev) => prev.filter((_, i) => i !== idxOpp));
-              setPlayerTrees((t) => Math.max(0, t - val));
-              setPlayerHasPolitician(false);
-              addHistory(false, `Contract -> removed player's Politician`);
-            }
-          }
-        }
-        break;
-      }
-
-      case "wildfire": {
-        if (byPlayer) {
-          setBotBoard([]);
-          setBotTrees(0);
-          setBotHasPolitician(false);
-          addHistory(true, `Wildfire -> wiped Bot`);
-        } else {
-          setPlayerBoard([]);
-          setPlayerTrees(0);
-          setPlayerHasPolitician(false);
-          addHistory(false, `Wildfire -> wiped Player`);
-        }
-        break;
-      }
-
-      default:
-        break;
-    }
-
-    // finalizar turno si corresponde (tree ya finalizó dentro del case)
-    finalizeAfterAction(byPlayer, card.type === "tree" ? (card.value ?? 1) : 0);
-  }
-
-  // ------------------------------------------------
-  // Manejar selección de objetivo para Fogata (jugador selecciona un árbol del bot)
-  // ------------------------------------------------
-  function handleBurnTarget(index) {
-    if (!selectingBurnTarget || !pendingFireCard) return;
-    if (index < 0 || index >= botBoard.length) return;
-
-    const cardToBurn = botBoard[index];
-    const val = cardToBurn.value ?? 1;
-    setBotBoard((prev) => prev.filter((_, i) => i !== index));
-    setBotTrees((t) => Math.max(0, t - val));
-
-    // consumir la fogata (por instanceId)
-    setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingFireCard.instanceId));
-    addHistory(true, `Fogata -> burned ${cardToBurn.name ?? "tree"}`);
-    setPendingFireCard(null);
-    setSelectingBurnTarget(false);
-
-    // fogata no termina el turno por regla
-  }
-
-  // ------------------------------------------------
-  // Manejar selección de objetivo para Leñador (jugador)
-  // ------------------------------------------------
-  function handleLumberTarget(index) {
-    if (!selectingLumberTarget || !pendingLumberCard) return;
-    if (index < 0 || index >= botBoard.length) return;
-
-    const stolen = botBoard[index];
-    const val = stolen.value ?? 1;
-
-    // quitar del bot
-    setBotBoard((prev) => prev.filter((_, i) => i !== index));
-    setBotTrees((t) => Math.max(0, t - val));
-
-    // agregar al jugador (la carta robada debe conservar imagen/valor; le asignamos nueva instanceId)
-    const newInstance = makeInstance({ ...stolen, id: stolen.id });
-    setPlayerBoard((prev) => [...prev, newInstance]);
-    setPlayerTrees((t) => t + val);
-
-    // consumir la carta leñador de la mano del jugador
-    setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingLumberCard.instanceId));
-    addHistory(true, `Leñador -> stole ${stolen.name ?? "tree"}`);
-    setPendingLumberCard(null);
-    setSelectingLumberTarget(false);
-
-    // leñador NO termina el turno por regla
-  }
-
-  // ------------------------------------------------
-  // Manejar selección de objetivo para Contract (jugador)
-  // ------------------------------------------------
-  function handleContractTarget(index, targetIsBot = true) {
-    if (!selectingContractTarget || !pendingContractCard) return;
-    
-    const board = targetIsBot ? botBoard : playerBoard;
-    const setBoard = targetIsBot ? setBotBoard : setPlayerBoard;
-    const setHasPolitician = targetIsBot ? setBotHasPolitician : setPlayerHasPolitician;
-    const setTrees = targetIsBot ? setBotTrees : setPlayerTrees;
-    
-    if (index < 0 || index >= board.length) return;
-    
-    const candidate = board[index];
-    if (!(candidate.type === "politician" || candidate.isPolitician)) {
-      alert("Debes seleccionar un Político como objetivo del Contrato");
-      return;
-    }
-
-    // Eliminar el político
-    const val = candidate.value ?? 0;
-    setBoard((prev) => prev.filter((_, i) => i !== index));
-    setTrees((t) => Math.max(0, t - val));
-    setHasPolitician(false);
-    
-    // Consumir contract de la mano del jugador
-    setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingContractCard.instanceId));
-    
-    addHistory(true, `Contract -> removed ${targetIsBot ? "Bot" : "Your"} Politician`);
-    setPendingContractCard(null);
-    setSelectingContractTarget(false);
-    
-    // Finalizar acción
-    finalizeAfterAction(true, 0);
-  }
-
-  function addTreeToBoard(card, byPlayer, setSelfBoard /*, setSelfTrees no se usa */) {
-    const instance = makeInstance(card);
-    setSelfBoard((prev) => [...prev, instance]);
-  }
-
-  // ------------------------------------------------
-  // Estilos y render
-  // ------------------------------------------------
-  const pulseCss = `
-    @keyframes burnPulse {
-      0% { box-shadow: 0 0 0 0 rgba(229,57,53,0.9); }
-      50% { box-shadow: 0 0 12px 6px rgba(229,57,53,0.35); }
-      100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.0); }
-    }
-    .fire-target {
-      border: 3px solid rgba(229,57,53,0.9);
-      border-radius: 8px;
-      animation: burnPulse 1.2s infinite;
-    }
-    .lumber-target {
-      border: 3px solid rgba(39,174,96,0.95);
-      border-radius: 8px;
-      animation: burnPulse 1.2s infinite;
-    }
-    .contract-target {
-      border: 3px solid rgba(66,133,244,0.95);
-      border-radius: 8px;
-      animation: burnPulse 1.2s infinite;
-    }
-    .politician-red {
-      border: 3px solid darkred;
-      border-radius: 8px;
-    }
-  `;
-
-  const isPolitician = (c) => c.type === "politician" || c.isPolitician;
-  const playerHasTreeInHand = playerHand.some((c) => c.type === "tree");
-
-  function handleEndTurnClick() {
-    if (!isPlayerTurn) return;
-    if (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) return;
-    finalizeAfterAction(true, 0);
-  }
-
-  const cardStyle = {
-    width: "80px",
-    height: "110px",
-    borderRadius: "8px",
-    boxShadow: "0 0 6px rgba(0,0,0,0.25)",
-  };
-
-  function handlePlayerCardClick(card) {
-    playCard(card, true);
-  }
-
-  return (
-      <>
-      <audio
-        ref={audioRef}
-        src={backgroundMusic}
-        autoPlay
-        loop
-        muted={isMuted}
-        volume={volume}
-        style={{ display: "none" }}
-      />
-      {/* Panel de control de volumen */}
-<div
-  style={{
-    position: "absolute",
-    top: "20px",
-    left: "20px",
-    width: "200px",
-    background: "#ffffffcc",
-    padding: "6px 10px",
-    borderRadius: "10px",
-    boxShadow: "0 0 8px rgba(0,0,0,0.15)",
-    backdropFilter: "blur(3px)"
-  }}
->
-  <h4 style={{ margin: "0 0 8px 0", color: "#2e4600", fontWeight: "bold" }}>
-    Música
-  </h4>
-
-  {/* Slider de volumen */}
-  <input
-    type="range"
-    min="0"
-    max="1"
-    step="0.01"
-    value={isMuted ? 0 : volume}
-      onChange={(e) => setVolume(parseFloat(e.target.value))}
-      disabled={isMuted}
-      style={{
-        flex: 1,
-        height: "4px",              // ← SLIDER MÁS DELGADO
-        marginTop: "2px"
-      }}
-  />
-
-  {/* Botón silenciar */}
-  <button
-    onClick={() => setIsMuted(!isMuted)}
-    style={{
-      centered: "true",
-      marginTop: "8px",
-      width: "100%",
-      padding: "2px 6px",
-      background: isMuted ? "#8b0000" : "#3c6e47",
-      color: "white",
-      border: "none",
-      borderRadius: "6px",
-      cursor: "pointer",
-      fontWeight: "bold"
-    }}
-  >
-    {isMuted ? "Desactivar Silencio" : "Silenciar"}
-  </button>
-</div>
-
-
-
-      <div
-        style={{
-          position: "relative",
-          minHeight: "100vh",
-          padding: 20,
-          marginLeft: "260px",
-        }}
-      >
-        {/* Panel de Reglas */}
-        <div
-          style={{
-            position: "absolute",
-            left: -200,
-            top: 120,
-            width: "300px",
-            height: "70%",
-            background: "#f2f2f2",
-            padding: "16px",
-            borderRight: "3px solid #ccc",
-            overflowY: "auto",
-            boxShadow: "2px 0 6px rgba(0,0,0,0.1)",
-          }}
-        >
-          <h3 style={{ color: "#917b00ff" }}>Reglas</h3>
-
-          <p>
-            <strong>Objetivo:</strong> Llegar a 20 puntos plantando árboles.
-          </p>
-
-          <h4>Cartas</h4>
-          <ul>
-            <li>
-              <strong>Árbol:</strong> Suma su valor a tu puntaje.
-            </li>
-            <li>
-              <strong>Fogata:</strong> Quita 1 carta del tablero enemigo.
-            </li>
-            <li>
-              <strong>Incendio:</strong> Quita 2 cartas del tablero enemigo.
-            </li>
-            <li>
-              <strong>Leñador:</strong> Elimina un árbol del enemigo.
-            </li>
-            <li>
-              <strong>Político:</strong> Bloquea al rival para plantar árboles.
-            </li>
-            <li>
-              <strong>Contrato:</strong> Elimina el Político que te bloquea.
-            </li>
-          </ul>
-
-          <h4>Turnos</h4>
-          <ul>
-            <li>Se roba 1 carta por turno (máx 5 en mano).</li>
-            <li>Puedes jugar 1 carta por turno.</li>
-            <li>Si el bot no puede jugar, pasa turno.</li>
-          </ul>
-        </div>
-
-        {/* Animación CSS pulse */}
-        <style>{pulseCss}</style>
-
-        <h2>Forest Clash</h2>
-
-        {/* Panel de turno */}
-          <div style={{ position: "absolute", top: 10, right: 20 }}>
-            <div
-              style={{
-                marginBottom: 8,
-                background: isPlayerTurn ? "#388e3c" : "#d32f2f",
-                color: "white",
-                padding: "6px 10px",
-                borderRadius: 16,
-                fontWeight: "bold",
-                textAlign: "center",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-              }}
-            >
-              {isPlayerTurn ? "Tu Turno" : "Turno del Bot"}
-            </div>
-            {isPlayerTurn && (
-              <button
-                onClick={handleEndTurnClick}
-                disabled={selectingBurnTarget || selectingLumberTarget || selectingContractTarget}
-                style={{
-                  padding: "8px 16px",
-                  background: "#6a1b9a",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "8px",
-                  boxShadow: "0 3px 6px rgba(0,0,0,0.2)",
-                  cursor: "pointer",
-                  transition: "background 0.2s",
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "#4a148c")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "#6a1b9a")}
-              >
-                Terminar Turno
-              </button>
-            )}
-        </div>
-
-        {/* progreso del bot */}
-        <div style={{ textAlign: "center", marginTop: 10 }}>
-          <h3>
-            Árboles del Bot: {botTrees} / {GOAL}
-          </h3>
-          <ProgressBar value={botTrees} goal={GOAL} />
-        </div>
-
-        {/* tablero del bot */}
-        <div style={{ marginTop: 18, textAlign: "center" }}>
-          <h3>Tablero del Bot</h3>
-          <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-            {botBoard.map((c, i) => {
-              let cls = "";
-              if (selectingBurnTarget) cls = "fire-target";
-              else if (selectingLumberTarget) cls = "lumber-target";
-              else if (selectingContractTarget && isPolitician(c)) cls = "contract-target";
-
-              const extraStyle = isPolitician(c)
-                ? { border: "3px solid darkred", borderRadius: 8 }
-                : {};
-
-              return (
-                <div
-                  key={c.instanceId}
-                  className={cls + (isPolitician(c) ? " politician-red" : "")}
-                  onClick={() => {
-                    if (selectingBurnTarget) handleBurnTarget(i);
-                    if (selectingLumberTarget) handleLumberTarget(i);
-                    if (selectingContractTarget) handleContractTarget(i, true);
-                  }}
-                  style={{
-                    cursor:
-                      selectingBurnTarget || selectingLumberTarget || selectingContractTarget
-                        ? "pointer"
-                        : "default",
-                    ...extraStyle,
-                  }}
-                >
-                  <img src={c.img} alt={c.name} style={cardStyle} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {/* progreso del jugador */}
-          <div style={{ textAlign: "center", marginTop: 30 }}>
-            <h3>
-              Tus Árboles: {playerTrees} / {GOAL}
-            </h3>
-            <ProgressBar value={playerTrees} goal={GOAL} />
-          </div>
-
-        {/* Tablero del jugador */}
-          <div style={{ marginTop: 18, textAlign: "center" }}>
-            <h3>Tu Tablero</h3>
-            <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-              {playerBoard.map((c, i) => {
-                let cls = "";
-                if (selectingBurnTarget) cls = "fire-target";
-                else if (selectingLumberTarget) cls = "lumber-target";
-                else if (selectingContractTarget && isPolitician(c)) cls = "contract-target"; // ← AÑADIDO
-
-                const extraStyle = isPolitician(c)
-                  ? { border: "3px solid darkred", borderRadius: 8 }
-                  : {};
-
-                return (
-                  <div
-                    key={c.instanceId}
-                    className={cls + (isPolitician(c) ? " politician-red" : "")}
-                    onClick={() => {
-                      if (selectingBurnTarget) handleBurnTarget(i, true);
-                      if (selectingLumberTarget) handleLumberTarget(i, true);
-                      if (selectingContractTarget) handleContractTarget(i, false); // ← AÑADIDO (false = es tu tablero)
-                    }}
-                    style={{
-                      cursor:
-                        selectingBurnTarget || selectingLumberTarget || selectingContractTarget
-                          ? "pointer"
-                          : "default",
-                      ...extraStyle,
-                    }}
-                  >
-                    <img src={c.img} alt={c.name} style={cardStyle} />
-                  </div>
-                );
-              })}
-            </div>
-        </div>
-
-        {/* Mano del jugador */}
-        <div style={{ textAlign: "center", marginTop: 40 }}>
-          <h3>Tu Mano</h3>
-          <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
-            {playerHand.map((c) => (
-              <div
-                key={c.instanceId}
-                className={
-                  selectingBurnTarget || selectingLumberTarget || selectingContractTarget
-                    ? "disabled-card"
-                    : "hand-card"
-                }
-                onClick={() =>
-                  !selectingBurnTarget &&
-                  !selectingLumberTarget &&
-                  !selectingContractTarget &&
-                  handlePlayerCardClick(c)
-                }
-              >
-                <img src={c.img} alt={c.name} style={cardStyle} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Panel de Jugadas - derecha */}
-      <div
-        style={{
-          position: "absolute",
-          right: "10px",
-          top: "100px",
-          width: "210px",
-          background: "#ffffffcc",
-          padding: "10px",
-          borderRadius: "8px",
-          boxShadow: "0 0 8px rgba(0,0,0,0.15)",
-          fontSize: "14px",
-        }}
-      >
-        <h4 style={{ marginTop: 0, color: "#444", textAlign: "center" }}>Jugadas</h4>
-
-        <div style={{ maxHeight: 320, overflowY: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", fontSize: 12 }}>Jugador</th>
-                <th style={{ textAlign: "right", fontSize: 12 }}>Acción</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {history.length === 0 ? (
-                <tr>
-                  <td colSpan={2} style={{ textAlign: "center", paddingTop: 8, color: "#666" }}>
-                    Aún no hay jugadas
-                  </td>
-                </tr>
-              ) : (
-                history
-                  .slice()
-                  .reverse()
-                  .map((h, i) => (
-                    <tr key={i} style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }}>
-                      <td style={{ padding: "6px 4px" }}>{h.player}</td>
-                      <td style={{ padding: "6px 4px", textAlign: "right" }}>{h.move}</td>
-                    </tr>
-                  ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
-  );
 }
 
+export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop user
+    const GOAL = 20;
+    const [playerTrees, setPlayerTrees] = useState(0);
+    const [botTrees, setBotTrees] = useState(0);
+    const [isPlayerTurn, setIsPlayerTurn] = useState(true);
+    const [gameOver, setGameOver] = useState(false);
 
+    const [playerHand, setPlayerHand] = useState([]);
+    const [botHand, setBotHand] = useState([]);
+    const [playerBoard, setPlayerBoard] = useState([]);
+    const [botBoard, setBotBoard] = useState([]);
+
+    const [selectingBurnTarget, setSelectingBurnTarget] = useState(false);
+    const [pendingFireCard, setPendingFireCard] = useState(null);
+    const [selectingLumberTarget, setSelectingLumberTarget] = useState(false);
+    const [pendingLumberCard, setPendingLumberCard] = useState(null);
+    const [selectingContractTarget, setSelectingContractTarget] = useState(false);
+    const [pendingContractCard, setPendingContractCard] = useState(null);
+
+    const [hasDrawnThisTurn, setHasDrawnThisTurn] = useState(false);
+    const [playerHasPolitician, setPlayerHasPolitician] = useState(false);
+    const [botHasPolitician, setBotHasPolitician] = useState(false);
+
+    const [history, setHistory] = useState([]);
+    const [volume, setVolume] = useState(0.5);
+    const [isMuted, setIsMuted] = useState(false);
+    const audioRef = React.useRef(null);
+
+    // Modals
+    const [showRules, setShowRules] = useState(false);
+    const [showAITips, setShowAITips] = useState(false);
+    const [showWeather, setShowWeather] = useState(false);
+    const [showLogin, setShowLogin] = useState(false);
+    const [showHistory, setShowHistory] = useState(false); // ⬅️ NUEVO: Modal de historial
+    const [gamesHistory, setGamesHistory] = useState([]); // ⬅️ NUEVO: Historial de partidas
+
+    function addHistory(byPlayer, label) {
+        const entry = {
+            player: byPlayer ? "Tú" : "Bot",
+            move: label ?? "(acción)",
+            time: Date.now(),
+        };
+        setHistory((prev) => {
+            const next = [...prev, entry];
+            return next.slice(-20);
+        });
+    }
+
+    // ⬅️ NUEVO: Función para manejar logout
+    const handleLogout = () => {
+        console.log('🚪 Cerrando sesión...');
+        localStorage.removeItem('token');
+        setUser(null); // ✅ Limpiar el estado del usuario
+        alert('Sesión cerrada exitosamente');
+    };
+
+    // ⬅️ NUEVO: Cargar historial de partidas
+    const loadGamesHistory = async () => {
+        const token = localStorage.getItem('token');
+        if (!token || !user) return;
+
+        try {
+            const response = await fetch('http://localhost:5000/api/games', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const games = await response.json();
+                setGamesHistory(games);
+                setShowHistory(true);
+                console.log('📊 Historial cargado:', games);
+            }
+        } catch (error) {
+            console.error('Error al cargar historial:', error);
+        }
+    };
+
+    useEffect(() => {
+        function drawInitialHand() {
+            const deck = [...allCards];
+            const shuffled = deck.sort(() => Math.random() - 0.5);
+            return shuffled.slice(0, 5).map((c) => makeInstance(c));
+        }
+        setPlayerHand(drawInitialHand());
+        setBotHand(drawInitialHand());
+        setHasDrawnThisTurn(false);
+    }, []);
+
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = volume;
+            audioRef.current.muted = isMuted;
+        }
+    }, [volume, isMuted]);
+
+    function drawCardForPlayer() {
+        setPlayerHand((prev) => {
+            if (prev.length >= 5) return prev;
+            const c = makeInstance(allCards[Math.floor(Math.random() * allCards.length)]);
+            return [...prev, c];
+        });
+    }
+
+    function drawCardForBot() {
+        setBotHand((prev) => {
+            if (prev.length >= 5) return prev;
+            const c = makeInstance(allCards[Math.floor(Math.random() * allCards.length)]);
+            return [...prev, c];
+        });
+    }
+
+    // ⬅️ NUEVO: Guardar partida en MongoDB
+    const saveGameToDatabase = async (winner, finalPlayerScore, finalBotScore) => {
+        if (!user) {
+            console.log('❌ Usuario no logueado, no se guarda la partida');
+            return;
+        }
+
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        try {
+            const response = await fetch('http://localhost:5000/api/games', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    playerScore: finalPlayerScore,
+                    botScore: finalBotScore,
+                    winner: winner,
+                    duration: 0, // Puedes agregar un timer si quieres
+                    moves: history.map(h => ({
+                        player: h.player,
+                        action: h.move,
+                        timestamp: new Date(h.time)
+                    }))
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Partida guardada en MongoDB:', data);
+            } else {
+                console.error('❌ Error al guardar partida');
+            }
+        } catch (error) {
+            console.error('💥 Error al conectar con el servidor:', error);
+        }
+    };
+
+    function finalizeAfterAction(byPlayer, addedValue = 0) {
+        setTimeout(() => {
+            if (byPlayer) {
+                setPlayerTrees((prev) => {
+                    const newTotal = prev + addedValue;
+                    if (newTotal >= GOAL) {
+                        setGameOver(true);
+                        // ⬅️ NUEVO: Guardar partida cuando gana el jugador
+                        saveGameToDatabase('player', newTotal, botTrees);
+                        setTimeout(() => alert("¡Ganaste! 🎉"), 20);
+                        return newTotal;
+                    }
+                    setIsPlayerTurn(false);
+                    setHasDrawnThisTurn(false);
+                    return newTotal;
+                });
+            } else {
+                setBotTrees((prev) => {
+                    const newTotal = prev + addedValue;
+                    if (newTotal >= GOAL) {
+                        setGameOver(true);
+                        // ⬅️ NUEVO: Guardar partida cuando gana el bot
+                        saveGameToDatabase('bot', playerTrees, newTotal);
+                        setTimeout(() => alert("¡El bot gana! 🤖"), 20);
+                        return newTotal;
+                    }
+                    setIsPlayerTurn(true);
+                    setHasDrawnThisTurn(false);
+                    return newTotal;
+                });
+            }
+        }, 50);
+    }
+
+    const botPlay = useCallback(() => {
+        if (gameOver) return;
+        if (isPlayerTurn) return;
+
+        const hasPolitician = botBoard.some((card) => card.type === "politician" || card.isPolitician);
+        const contractCard = botHand.find((card) => card.type === "contract");
+
+        if (hasPolitician) {
+            if (!contractCard) {
+                setIsPlayerTurn(true);
+                setHasDrawnThisTurn(false);
+                return;
+            } else {
+                const idx = botBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
+                if (idx !== -1) {
+                    setBotHand((prev) => prev.filter((c) => c.instanceId !== contractCard.instanceId));
+                    const removed = botBoard[idx];
+                    const val = removed.value ?? 0;
+                    setBotBoard((prev) => prev.filter((_, i) => i !== idx));
+                    setBotTrees((t) => Math.max(0, t - val));
+                    setBotHasPolitician(false);
+                    addHistory(false, `Contract -> removed Politician`);
+                    finalizeAfterAction(false, 0);
+                    return;
+                } else {
+                    setIsPlayerTurn(true);
+                    setHasDrawnThisTurn(false);
+                    return;
+                }
+            }
+        }
+
+        const playable = botHand.filter((card) => {
+            if (card.type === "tree") return true;
+            if (card.type === "wildfire") return true;
+            if (card.type === "fire") return playerBoard.length > 0;
+            if (card.type === "lumberjack") return playerBoard.length > 0;
+            if (card.type === "politician") return true;
+            if (card.type === "contract") return true;
+            return false;
+        });
+
+        if (playable.length === 0) {
+            setIsPlayerTurn(true);
+            setHasDrawnThisTurn(false);
+            return;
+        }
+
+        const botCard = playable[Math.floor(Math.random() * playable.length)];
+        playCard(botCard, false);
+    }, [gameOver, isPlayerTurn, botBoard, botHand, playerBoard]);
+
+    useEffect(() => {
+        if (gameOver) return;
+
+        if (isPlayerTurn) {
+            if (!hasDrawnThisTurn) {
+                drawCardForPlayer();
+                setHasDrawnThisTurn(true);
+            }
+        } else {
+            if (!hasDrawnThisTurn) {
+                drawCardForBot();
+                setHasDrawnThisTurn(true);
+                setTimeout(() => {
+                    botPlay();
+                }, 700);
+            }
+        }
+    }, [isPlayerTurn, gameOver, hasDrawnThisTurn, botPlay]);
+
+    function playCard(card, byPlayer = true) {
+        if (gameOver) return;
+        if (byPlayer && !isPlayerTurn) return;
+        if (!byPlayer && isPlayerTurn) return;
+
+        const label = card.name ?? card.type;
+
+        if (card.type === "politician") {
+            if (byPlayer) {
+                setBotBoard((prev) => [...prev, { ...card, isPolitician: true }]);
+                setBotHasPolitician(true);
+                setPlayerHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
+                addHistory(true, `Político -> placed on Bot`);
+            } else {
+                setPlayerBoard((prev) => [...prev, { ...card, isPolitician: true }]);
+                setPlayerHasPolitician(true);
+                setBotHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
+                addHistory(false, `Político -> placed on Player`);
+            }
+            finalizeAfterAction(byPlayer, 0);
+            return;
+        }
+
+        if ((selectingBurnTarget || selectingLumberTarget || selectingContractTarget) && byPlayer) {
+            return;
+        }
+
+        if (card.type === "fire" && byPlayer) {
+            setSelectingBurnTarget(true);
+            setPendingFireCard(card);
+            return;
+        }
+
+        if (card.type === "lumberjack" && byPlayer) {
+            setSelectingLumberTarget(true);
+            setPendingLumberCard(card);
+            return;
+        }
+
+        if (card.type === "contract" && byPlayer) {
+            setSelectingContractTarget(true);
+            setPendingContractCard(card);
+            return;
+        }
+
+        if (byPlayer) {
+            setPlayerHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
+        } else {
+            setBotHand((prev) => prev.filter((c) => c.instanceId !== card.instanceId));
+        }
+
+        switch (card.type) {
+            case "tree": {
+                const blocked = byPlayer
+                    ? playerBoard.some((c) => c.isPolitician)
+                    : botBoard.some((c) => c.isPolitician);
+
+                if (blocked) {
+                    alert("No puedes plantar árboles: hay un Politician que lo impide.");
+                    return;
+                }
+                addTreeToBoard(card, byPlayer, byPlayer ? setPlayerBoard : setBotBoard);
+                addHistory(byPlayer, `Tree (${card.value ?? 1})`);
+                finalizeAfterAction(byPlayer, card.value ?? 1);
+                return;
+            }
+
+            case "fire": {
+                if (!byPlayer) {
+                    if (playerBoard.length > 0) {
+                        const idx = Math.floor(Math.random() * playerBoard.length);
+                        const burned = playerBoard[idx];
+                        const val = burned.value ?? 1;
+                        setPlayerBoard((prev) => prev.filter((_, i) => i !== idx));
+                        setPlayerTrees((t) => Math.max(0, t - val));
+                        addHistory(false, `Fogata -> burned ${burned.name ?? "tree"}`);
+                    } else {
+                        setPlayerTrees((t) => Math.max(0, t - 1));
+                        addHistory(false, `Fogata -> -1 trees`);
+                    }
+                }
+                break;
+            }
+
+            case "lumberjack": {
+                if (!byPlayer) {
+                    if (playerBoard.length > 0) {
+                        const idx = Math.floor(Math.random() * playerBoard.length);
+                        const stolen = playerBoard[idx];
+                        const val = stolen.value ?? 1;
+                        setPlayerBoard((prev) => prev.filter((_, i) => i !== idx));
+                        setPlayerTrees((t) => Math.max(0, t - val));
+                        setBotBoard((b) => [...b, stolen]);
+                        setBotTrees((t) => t + val);
+                        addHistory(false, `Leñador -> stole ${stolen.name ?? "tree"}`);
+                    } else {
+                        const treeTemplate = allCards.find((x) => x.type === "tree");
+                        setBotBoard((b) => [...b, makeInstance(treeTemplate)]);
+                        setBotTrees((t) => t + 1);
+                        addHistory(false, `Leñador -> +1 tree`);
+                    }
+                }
+                break;
+            }
+
+            case "contract": {
+                if (!byPlayer) {
+                    const idxSelf = botBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
+                    if (idxSelf !== -1) {
+                        const removed = botBoard[idxSelf];
+                        const val = removed.value ?? 0;
+                        setBotBoard((prev) => prev.filter((_, i) => i !== idxSelf));
+                        setBotTrees((t) => Math.max(0, t - val));
+                        setBotHasPolitician(false);
+                        addHistory(false, `Contract -> removed own Politician`);
+                    } else {
+                        const idxOpp = playerBoard.findIndex((c) => c.type === "politician" || c.isPolitician);
+                        if (idxOpp !== -1) {
+                            const removed = playerBoard[idxOpp];
+                            const val = removed.value ?? 0;
+                            setPlayerBoard((prev) => prev.filter((_, i) => i !== idxOpp));
+                            setPlayerTrees((t) => Math.max(0, t - val));
+                            setPlayerHasPolitician(false);
+                            addHistory(false, `Contract -> removed player's Politician`);
+                        }
+                    }
+                }
+                break;
+            }
+
+            case "wildfire": {
+                if (byPlayer) {
+                    setBotBoard([]);
+                    setBotTrees(0);
+                    setBotHasPolitician(false);
+                    addHistory(true, `Wildfire -> wiped Bot`);
+                } else {
+                    setPlayerBoard([]);
+                    setPlayerTrees(0);
+                    setPlayerHasPolitician(false);
+                    addHistory(false, `Wildfire -> wiped Player`);
+                }
+                break;
+            }
+
+            default:
+                break;
+        }
+
+        finalizeAfterAction(byPlayer, card.type === "tree" ? (card.value ?? 1) : 0);
+    }
+
+    function handleBurnTarget(index) {
+        if (!selectingBurnTarget || !pendingFireCard) return;
+        if (index < 0 || index >= botBoard.length) return;
+
+        const cardToBurn = botBoard[index];
+        const val = cardToBurn.value ?? 1;
+        setBotBoard((prev) => prev.filter((_, i) => i !== index));
+        setBotTrees((t) => Math.max(0, t - val));
+
+        setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingFireCard.instanceId));
+        addHistory(true, `Fogata -> burned ${cardToBurn.name ?? "tree"}`);
+        setPendingFireCard(null);
+        setSelectingBurnTarget(false);
+    }
+
+    function handleLumberTarget(index) {
+        if (!selectingLumberTarget || !pendingLumberCard) return;
+        if (index < 0 || index >= botBoard.length) return;
+
+        const stolen = botBoard[index];
+        const val = stolen.value ?? 1;
+
+        setBotBoard((prev) => prev.filter((_, i) => i !== index));
+        setBotTrees((t) => Math.max(0, t - val));
+
+        const newInstance = makeInstance({ ...stolen, id: stolen.id });
+        setPlayerBoard((prev) => [...prev, newInstance]);
+        setPlayerTrees((t) => t + val);
+
+        setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingLumberCard.instanceId));
+        addHistory(true, `Leñador -> stole ${stolen.name ?? "tree"}`);
+        setPendingLumberCard(null);
+        setSelectingLumberTarget(false);
+    }
+
+    function handleContractTarget(index, targetIsBot = true) {
+        if (!selectingContractTarget || !pendingContractCard) return;
+
+        const board = targetIsBot ? botBoard : playerBoard;
+        const setBoard = targetIsBot ? setBotBoard : setPlayerBoard;
+        const setHasPolitician = targetIsBot ? setBotHasPolitician : setPlayerHasPolitician;
+        const setTrees = targetIsBot ? setBotTrees : setPlayerTrees;
+
+        if (index < 0 || index >= board.length) return;
+
+        const candidate = board[index];
+        if (!(candidate.type === "politician" || candidate.isPolitician)) {
+            alert("Debes seleccionar un Político como objetivo del Contrato");
+            return;
+        }
+
+        const val = candidate.value ?? 0;
+        setBoard((prev) => prev.filter((_, i) => i !== index));
+        setTrees((t) => Math.max(0, t - val));
+        setHasPolitician(false);
+
+        setPlayerHand((prev) => prev.filter((c) => c.instanceId !== pendingContractCard.instanceId));
+
+        addHistory(true, `Contract -> removed ${targetIsBot ? "Bot" : "Your"} Politician`);
+        setPendingContractCard(null);
+        setSelectingContractTarget(false);
+
+        finalizeAfterAction(true, 0);
+    }
+
+    function addTreeToBoard(card, byPlayer, setSelfBoard) {
+        const instance = makeInstance(card);
+        setSelfBoard((prev) => [...prev, instance]);
+    }
+
+    function handleEndTurnClick() {
+        if (!isPlayerTurn) return;
+        if (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) return;
+        finalizeAfterAction(true, 0);
+    }
+
+    const isPolitician = (c) => c.type === "politician" || c.isPolitician;
+
+    return (
+        <>
+            <audio ref={audioRef} src={backgroundMusic} autoPlay loop muted={isMuted} style={{ display: "none" }} />
+
+            {/* NAVBAR CON BOTÓN DE LOGIN ⬅️ MODIFICADO */}
+            <Navbar bg="success" variant="dark" className="mb-3">
+                <Container fluid>
+                    <Navbar.Brand href="#" className="fw-bold fs-3">🌲 Forest Clash</Navbar.Brand>
+                    <div className="d-flex gap-2 align-items-center">
+                        <Button variant="outline-light" size="sm" onClick={() => setShowRules(true)}>📖 Reglas</Button>
+                        <Button variant="outline-light" size="sm" onClick={() => setShowAITips(true)}>💡 Consejos IA</Button>
+                        <Button variant="outline-light" size="sm" onClick={() => setShowWeather(true)}>🌦️ Clima</Button>
+                        <Button variant="outline-light" size="sm" onClick={() => setIsMuted(!isMuted)}>
+                            {isMuted ? "🔇" : "🔊"}
+                        </Button>
+
+                        {/* ⬅️ NUEVO: Botón de Login/Usuario */}
+                        {user ? (
+                            <Dropdown align="end">
+                                <Dropdown.Toggle variant="light" size="sm" className="d-flex align-items-center gap-2">
+                                    {user.avatar && (
+                                        <img
+                                            src={user.avatar}
+                                            alt={user.displayName || user.username}
+                                            style={{
+                                                width: "30px",
+                                                height: "30px",
+                                                borderRadius: "50%",
+                                                border: "2px solid white"
+                                            }}
+                                        />
+                                    )}
+                                    <span>{user.displayName || user.username}</span>
+                                </Dropdown.Toggle>
+
+                                <Dropdown.Menu>
+                                    <Dropdown.ItemText>
+                                        <small className="text-muted">{user.email}</small>
+                                    </Dropdown.ItemText>
+                                    <Dropdown.Divider />
+                                    <Dropdown.Item onClick={loadGamesHistory}>
+                                        📊 Historial de Partidas
+                                    </Dropdown.Item>
+                                    <Dropdown.Item>
+                                        🏆 Mis Estadísticas
+                                        <div className="mt-2">
+                                            <small className="d-block">Jugadas: {user.stats?.gamesPlayed || 0}</small>
+                                            <small className="d-block">Ganadas: {user.stats?.gamesWon || 0}</small>
+                                            <small className="d-block">Perdidas: {user.stats?.gamesLost || 0}</small>
+                                            <small className="d-block">Máximo: {user.stats?.highestScore || 0}</small>
+                                        </div>
+                                    </Dropdown.Item>
+                                    <Dropdown.Divider />
+                                    <Dropdown.Item onClick={handleLogout} className="text-danger">
+                                        🚪 Cerrar Sesión
+                                    </Dropdown.Item>
+                                </Dropdown.Menu>
+                            </Dropdown>
+                        ) : (
+                            <Button variant="light" size="sm" onClick={() => setShowLogin(true)}>
+                                🔐 Iniciar Sesión
+                            </Button>
+                        )}
+                    </div>
+                </Container>
+            </Navbar>
+
+            <Container fluid>
+                <Row>
+                    {/* COLUMNA IZQUIERDA: Historial */}
+                    <Col md={3} className="mb-3">
+                        <Card bg="light">
+                            <Card.Header className="bg-secondary text-white fw-bold">📜 Historial</Card.Header>
+                            <Card.Body style={{ maxHeight: "400px", overflowY: "auto" }}>
+                                {history.length === 0 ? (
+                                    <small className="text-muted">Aún no hay jugadas</small>
+                                ) : (
+                                    history.slice().reverse().map((h, i) => (
+                                        <div key={i} className="border-bottom pb-1 mb-1">
+                                            <small><strong>{h.player}:</strong> {h.move}</small>
+                                        </div>
+                                    ))
+                                )}
+                            </Card.Body>
+                        </Card>
+                    </Col>
+
+                    {/* COLUMNA CENTRAL: Juego */}
+                    <Col md={6}>
+                        {/* Indicador de turno */}
+                        <div className="text-center mb-3">
+                            <Badge bg={isPlayerTurn ? "success" : "danger"} className="fs-5 p-2">
+                                {isPlayerTurn ? "🎮 Tu Turno" : "🤖 Turno del Bot"}
+                            </Badge>
+                            {isPlayerTurn && (
+                                <Button
+                                    variant="primary"
+                                    className="ms-3"
+                                    onClick={handleEndTurnClick}
+                                    disabled={selectingBurnTarget || selectingLumberTarget || selectingContractTarget}
+                                >
+                                    Terminar Turno
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Tablero del Bot */}
+                        <Card className="mb-3 border-danger">
+                            <Card.Header className="bg-danger text-white">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <span className="fw-bold">🤖 Bot: {botTrees} / {GOAL}</span>
+                                    <ProgressBar
+                                        now={(botTrees / GOAL) * 100}
+                                        variant={botTrees >= GOAL * 0.9 ? "danger" : botTrees >= GOAL * 0.5 ? "warning" : "success"}
+                                        style={{ width: "200px" }}
+                                    />
+                                </div>
+                            </Card.Header>
+                            <Card.Body className="bg-light">
+                                <div className="d-flex flex-wrap gap-2 justify-content-center">
+                                    {botBoard.map((c, i) => (
+                                        <div
+                                            key={c.instanceId}
+                                            onClick={() => {
+                                                if (selectingBurnTarget) handleBurnTarget(i);
+                                                if (selectingLumberTarget) handleLumberTarget(i);
+                                                if (selectingContractTarget) handleContractTarget(i, true);
+                                            }}
+                                            style={{
+                                                cursor: (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) ? "pointer" : "default",
+                                                border: isPolitician(c) ? "3px solid darkred" :
+                                                    selectingBurnTarget ? "3px solid orange" :
+                                                        selectingLumberTarget ? "3px solid green" :
+                                                            selectingContractTarget && isPolitician(c) ? "3px solid blue" : "none",
+                                                borderRadius: "8px",
+                                                padding: "5px"
+                                            }}
+                                        >
+                                            <img src={c.img} alt={c.name} style={{ width: "80px", height: "110px", borderRadius: "8px" }} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card.Body>
+                        </Card>
+
+                        {/* Tablero del Jugador */}
+                        <Card className="mb-3 border-success">
+                            <Card.Header className="bg-success text-white">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <span className="fw-bold">👤 Tú: {playerTrees} / {GOAL}</span>
+                                    <ProgressBar
+                                        now={(playerTrees / GOAL) * 100}
+                                        variant={playerTrees >= GOAL * 0.9 ? "danger" : playerTrees >= GOAL * 0.5 ? "warning" : "success"}
+                                        style={{ width: "200px" }}
+                                    />
+                                </div>
+                            </Card.Header>
+                            <Card.Body className="bg-light">
+                                <div className="d-flex flex-wrap gap-2 justify-content-center">
+                                    {playerBoard.map((c, i) => (
+                                        <div
+                                            key={c.instanceId}
+                                            onClick={() => {
+                                                if (selectingContractTarget) handleContractTarget(i, false);
+                                            }}
+                                            style={{
+                                                border: isPolitician(c) ? "3px solid darkred" :
+                                                    selectingContractTarget && isPolitician(c) ? "3px solid blue" : "none",
+                                                borderRadius: "8px",
+                                                padding: "5px"
+                                            }}
+                                        >
+                                            <img src={c.img} alt={c.name} style={{ width: "80px", height: "110px", borderRadius: "8px" }} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card.Body>
+                        </Card>
+
+                        {/* Mano del Jugador */}
+                        <Card className="border-primary">
+                            <Card.Header className="bg-primary text-white fw-bold">🃏 Tu Mano</Card.Header>
+                            <Card.Body>
+                                {selectingBurnTarget && (
+                                    <Alert variant="warning">🔥 Selecciona un árbol del bot para quemar</Alert>
+                                )}
+                                {selectingLumberTarget && (
+                                    <Alert variant="info">🪓 Selecciona un árbol del bot para robar</Alert>
+                                )}
+                                {selectingContractTarget && (
+                                    <Alert variant="primary">📜 Selecciona un Político para eliminar</Alert>
+                                )}
+                                <div className="d-flex flex-wrap gap-2 justify-content-center">
+                                    {playerHand.map((c) => (
+                                        <div
+                                            key={c.instanceId}
+                                            onClick={() => !selectingBurnTarget && !selectingLumberTarget && !selectingContractTarget && playCard(c, true)}
+                                            style={{
+                                                cursor: (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) ? "not-allowed" : "pointer",
+                                                opacity: (selectingBurnTarget || selectingLumberTarget || selectingContractTarget) ? 0.5 : 1,
+                                                transition: "transform 0.2s"
+                                            }}
+                                            onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-10px)"}
+                                            onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
+                                        >
+                                            <img src={c.img} alt={c.name} style={{ width: "80px", height: "110px", borderRadius: "8px" }} />
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+
+                    {/* COLUMNA DERECHA: Info */}
+                    <Col md={3}>
+                        <Card bg="info" text="white" className="mb-3">
+                            <Card.Header className="fw-bold">ℹ️ Información</Card.Header>
+                            <Card.Body>
+                                <p className="mb-1"><strong>Objetivo:</strong> Llegar a {GOAL} árboles</p>
+                                <p className="mb-1"><strong>Cartas en mano:</strong> {playerHand.length}/5</p>
+                                <p className="mb-0"><strong>Turno:</strong> {isPlayerTurn ? "Tuyo" : "Bot"}</p>
+                            </Card.Body>
+                        </Card>
+
+                        <Card bg="warning" className="mb-3">
+                            <Card.Header className="fw-bold">🎵 Audio</Card.Header>
+                            <Card.Body>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={isMuted ? 0 : volume}
+                                    onChange={(e) => setVolume(parseFloat(e.target.value))}
+                                    disabled={isMuted}
+                                    className="form-range"
+                                />
+                                <Button
+                                    variant={isMuted ? "danger" : "success"}
+                                    size="sm"
+                                    className="w-100 mt-2"
+                                    onClick={() => setIsMuted(!isMuted)}
+                                >
+                                    {isMuted ? "Activar Audio" : "Silenciar"}
+                                </Button>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
+            </Container>
+
+            {/* ⬅️ NUEVO: MODAL DE LOGIN */}
+            <Modal show={showLogin} onHide={() => setShowLogin(false)} centered>
+                <Modal.Body className="p-0">
+                    <Button
+                        variant="link"
+                        className="position-absolute top-0 end-0 m-2 text-dark"
+                        onClick={() => setShowLogin(false)}
+                        style={{ zIndex: 1, textDecoration: 'none', fontSize: '24px' }}
+                    >
+                        ✕
+                    </Button>
+                    <Login onLoginSuccess={(userData) => {
+                        console.log('✅ Login exitoso en Game.jsx:', userData.username);
+                        setUser(userData); // ✅ Actualizar el estado del usuario
+                        setShowLogin(false); // ✅ Cerrar el modal
+                    }} />
+                </Modal.Body>
+            </Modal>
+
+            {/* MODAL: Reglas */}
+            <Modal show={showRules} onHide={() => setShowRules(false)} size="lg">
+                <Modal.Header closeButton className="bg-success text-white">
+                    <Modal.Title>📖 Reglas del Juego</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <h5>Objetivo</h5>
+                    <p>Llegar a {GOAL} puntos plantando árboles antes que el bot.</p>
+
+                    <h5>Cartas</h5>
+                    <ul>
+                        <li><strong>🌲 Árbol:</strong> Suma su valor a tu puntaje</li>
+                        <li><strong>🔥 Fogata:</strong> Quema 1 carta del tablero enemigo</li>
+                        <li><strong>💥 Incendio:</strong> Elimina todo el tablero enemigo</li>
+                        <li><strong>🪓 Leñador:</strong> Roba un árbol del enemigo</li>
+                        <li><strong>🎩 Político:</strong> Bloquea al rival para plantar árboles</li>
+                        <li><strong>📜 Contrato:</strong> Elimina un Político del juego</li>
+                    </ul>
+
+                    <h5>Turnos</h5>
+                    <ul>
+                        <li>Se roba 1 carta por turno (máx 5 en mano)</li>
+                        <li>Puedes jugar 1 carta por turno</li>
+                        <li>Algunas cartas requieren seleccionar objetivo</li>
+                    </ul>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="success" onClick={() => setShowRules(false)}>Entendido</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* MODAL: Consejos de IA */}
+            <Modal show={showAITips} onHide={() => setShowAITips(false)}>
+                <Modal.Header closeButton className="bg-primary text-white">
+                    <Modal.Title>💡 Consejos del Guardabosques (IA)</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="text-muted">🔧 Aquí se integrará la API de IA (Gemini)</p>
+                    <p><strong>Consejos sobre prevención de incendios forestales:</strong></p>
+                    <ul>
+                        <li>No dejes fogatas sin supervisión</li>
+                        <li>Respeta las zonas de prohibición</li>
+                        <li>Reporta cualquier humo sospechoso</li>
+                    </ul>
+                    <Button variant="primary" className="w-100">Obtener más consejos (IA)</Button>
+                </Modal.Body>
+            </Modal>
+
+            {/* MODAL: Clima */}
+            <Modal show={showWeather} onHide={() => setShowWeather(false)}>
+                <Modal.Header closeButton className="bg-info text-white">
+                    <Modal.Title>🌦️ Condiciones del Clima (API Externa)</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="text-muted">🔧 Aquí se integrará la API del clima</p>
+                    <input type="text" className="form-control mb-3" placeholder="Ingresa tu ciudad..." />
+                    <Button variant="info" className="w-100">Consultar Clima</Button>
+
+                    <hr />
+
+                    <div className="mt-3">
+                        <h6>📍 Santiago, Chile</h6>
+                        <p><strong>Temperatura:</strong> 25°C</p>
+                        <p><strong>Humedad:</strong> 45%</p>
+                        <p><strong>Riesgo de incendio:</strong> <Badge bg="warning">Medio</Badge></p>
+                    </div>
+                </Modal.Body>
+            </Modal>
+
+            {/* ⬅️ NUEVO: MODAL DE HISTORIAL DE PARTIDAS */}
+            <Modal show={showHistory} onHide={() => setShowHistory(false)} size="lg">
+                <Modal.Header closeButton className="bg-primary text-white">
+                    <Modal.Title>📊 Historial de Partidas</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {gamesHistory.length === 0 ? (
+                        <p className="text-center text-muted">Aún no has jugado ninguna partida</p>
+                    ) : (
+                        <div className="table-responsive">
+                            <table className="table table-hover">
+                                <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Resultado</th>
+                                    <th>Tu Puntaje</th>
+                                    <th>Bot Puntaje</th>
+                                    <th>Duración</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {gamesHistory.map((game, index) => (
+                                    <tr key={game._id || index}>
+                                        <td>
+                                            <small>
+                                                {new Date(game.createdAt).toLocaleDateString('es-ES', {
+                                                    day: '2-digit',
+                                                    month: '2-digit',
+                                                    year: 'numeric',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                })}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            {game.winner === 'player' ? (
+                                                <Badge bg="success">🎉 Victoria</Badge>
+                                            ) : (
+                                                <Badge bg="danger">😔 Derrota</Badge>
+                                            )}
+                                        </td>
+                                        <td className="fw-bold">{game.playerScore}</td>
+                                        <td>{game.botScore}</td>
+                                        <td>
+                                            <small>{game.moves?.length || 0} movimientos</small>
+                                        </td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowHistory(false)}>Cerrar</Button>
+                </Modal.Footer>
+            </Modal>
+        </>
+    );
+}
