@@ -31,6 +31,7 @@ El objetivo es llegar a **20 árboles** antes que tu rival.
 ---
 
 ## 📂 Estructura del proyecto
+```
 Forest-Clash/          # Raíz del proyecto
 ├── frontend/           # Carpeta del cliente (React)
 │   ├── src/
@@ -48,4 +49,5 @@ Forest-Clash/          # Raíz del proyecto
 │   └── package.json
 ├── README.md           # Documentación del proyecto
 └── .gitignore          # Archivos y carpetas ignoradas por git
+```
 
