@@ -830,7 +830,7 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
                         </div>
 
                           {/* Tablero del Bot */}
-                          <Card style={{ border: `3px solid ${coloresBot.border}`, borderRadius: "10px" }}>
+                          <Card className="mb-4" style={{ border: `3px solid ${coloresBot.border}`, borderRadius: "10px" }}>
                               <Card.Header
                                   style={{
                                       backgroundColor: coloresBot.headerBg,
@@ -892,7 +892,7 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
 
 
                           {/* Tablero del Jugador */}
-                          <Card style={{ border: `3px solid ${colors.border}`, borderRadius: "10px" }}>
+                          <Card className="mb-4" style={{ border: `3px solid ${colors.border}`, borderRadius: "10px" }}>
                               <Card.Header
                                   style={{
                                       backgroundColor: colors.headerBg,
@@ -951,7 +951,7 @@ export default function Game({ user, setUser }) { // ⬅️ NUEVO: Recibir prop 
 
 
                         {/* Mano del Jugador */}
-                        <Card style={{ border: "2px solid #001f3f" }}>
+                        <Card className="mb-4" style={{ border: "2px solid #001f3f" }}>
                             <Card.Header
                                 style={{
                                     backgroundColor: "#001f3f",
